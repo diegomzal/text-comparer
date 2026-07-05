@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import * as Diff from 'diff';
 
 export type DiffType = 'chars' | 'words' | 'lines';
@@ -13,35 +13,32 @@ export function useCompare() {
     const [original, setOriginal] = useState('');
     const [modified, setModified] = useState('');
     const [diffType, setDiffType] = useState<DiffType>('chars');
-    const [diffResult, setDiffResult] = useState<DiffResult | null>(null);
+    // Texts captured when Compare was clicked; the diff itself is derived,
+    // so switching diff type recomputes automatically.
+    const [snapshot, setSnapshot] = useState<{ original: string; modified: string } | null>(null);
 
     const compare = useCallback(() => {
-        let diffs: Diff.Change[] = [];
+        setSnapshot({ original, modified });
+    }, [original, modified]);
 
+    const diffResult = useMemo<DiffResult | null>(() => {
+        if (!snapshot) return null;
+
+        let diffs: Diff.Change[];
         switch (diffType) {
             case 'chars':
-                diffs = Diff.diffChars(original, modified);
+                diffs = Diff.diffChars(snapshot.original, snapshot.modified);
                 break;
             case 'words':
-                diffs = Diff.diffWords(original, modified);
+                diffs = Diff.diffWords(snapshot.original, snapshot.modified);
                 break;
             case 'lines':
-                diffs = Diff.diffLines(original, modified);
+                diffs = Diff.diffLines(snapshot.original, snapshot.modified);
                 break;
         }
 
-        setDiffResult({
-            original,
-            modified,
-            diffs,
-        });
-    }, [original, modified, diffType]);
-
-    useEffect(() => {
-        if (diffResult) {
-            compare();
-        }
-    }, [diffType]); // eslint-disable-line react-hooks/exhaustive-deps
+        return { ...snapshot, diffs };
+    }, [snapshot, diffType]);
 
     return {
         original,

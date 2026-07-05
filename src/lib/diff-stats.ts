@@ -3,9 +3,9 @@ import type * as Diff from 'diff';
 export type DiffStats = {
     /** Number of change groups (adjacent removed+added parts count as one). */
     changeCount: number;
-    /** Number of added parts. */
+    /** Units added (chars/words/lines, per the diff granularity). */
     added: number;
-    /** Number of removed parts. */
+    /** Units removed (chars/words/lines, per the diff granularity). */
     removed: number;
     /** Maps a part's index in `diffs` to its change group index. */
     partToChange: Map<number, number>;
@@ -21,8 +21,8 @@ export function getDiffStats(diffs: Diff.Change[]): DiffStats {
     diffs.forEach((part, i) => {
         const changed = Boolean(part.added || part.removed);
         if (changed) {
-            if (part.added) added++;
-            if (part.removed) removed++;
+            if (part.added) added += part.count ?? 1;
+            if (part.removed) removed += part.count ?? 1;
             if (!prevChanged) changeCount++;
             partToChange.set(i, changeCount - 1);
         }

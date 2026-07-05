@@ -2,17 +2,17 @@ import { useRef, useEffect } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { DiffResult } from "@/hooks/useCompare";
 import { cn } from "@/lib/utils";
+import { addedClass, removedClass, activeChangeClass, centerChange, type ActiveChange } from "./view-utils";
 
 interface SplitViewProps {
     diffResult: DiffResult;
     partToChange: Map<number, number>;
-    activeChange: number;
+    activeChange: ActiveChange;
 }
 
 export function SplitView({ diffResult, partToChange, activeChange }: SplitViewProps) {
     const leftRef = useRef<HTMLDivElement>(null);
     const rightRef = useRef<HTMLDivElement>(null);
-    const suppressSync = useRef(false);
 
     useEffect(() => {
         const left = leftRef.current;
@@ -21,7 +21,6 @@ export function SplitView({ diffResult, partToChange, activeChange }: SplitViewP
         if (!left || !right) return;
 
         const handleScroll = (source: HTMLDivElement, target: HTMLDivElement) => {
-            if (suppressSync.current) return;
             if (source.scrollTop !== target.scrollTop) {
                 target.scrollTop = source.scrollTop;
             }
@@ -40,42 +39,36 @@ export function SplitView({ diffResult, partToChange, activeChange }: SplitViewP
     }, []);
 
     useEffect(() => {
-        if (activeChange < 0) return;
-
-        // Each pane renders a span for every part (empty for the other
-        // side's changes), so both can center their own copy. Pause the
-        // scroll sync so the two programmatic scrolls don't fight.
-        suppressSync.current = true;
-        for (const pane of [leftRef.current, rightRef.current]) {
-            pane
-                ?.querySelector(`[data-change="${activeChange}"]`)
-                ?.scrollIntoView({ block: "center" });
+        if (!activeChange) return;
+        // The panes share an identical layout, so one computed offset
+        // centers the change in both and stays consistent with the sync.
+        centerChange(leftRef.current, activeChange.index);
+        if (leftRef.current && rightRef.current) {
+            rightRef.current.scrollTop = leftRef.current.scrollTop;
         }
-        const id = setTimeout(() => {
-            suppressSync.current = false;
-        }, 100);
-        return () => clearTimeout(id);
     }, [activeChange]);
 
     const renderPane = (side: "original" | "modified") => (
         <div className="p-6 font-mono text-sm whitespace-pre-wrap leading-relaxed">
             {diffResult.diffs.map((part, index) => {
                 const change = partToChange.get(index);
-                const visible = side === "original" ? !part.added : !part.removed;
+                const hidden = side === "original" ? part.added : part.removed;
                 return (
                     <span
                         key={index}
                         data-change={change}
+                        aria-hidden={hidden || undefined}
                         className={cn(
-                            side === "original" && part.removed &&
-                                "bg-red-100 text-red-800 line-through decoration-red-500 decoration-2 dark:bg-red-900/60 dark:text-red-100",
-                            side === "modified" && part.added &&
-                                "bg-green-100 text-green-800 font-bold dark:bg-green-600 dark:text-white",
-                            visible && change === activeChange && (part.added || part.removed) &&
-                                "outline-2 outline-offset-1 outline-blue-500"
+                            part.added && addedClass,
+                            part.removed && removedClass,
+                            activeChange != null && change === activeChange.index && activeChangeClass,
+                            // The other side's text stays in the flow (invisible)
+                            // so both panes wrap identically and line up at the
+                            // same scroll offsets.
+                            hidden && "invisible select-none"
                         )}
                     >
-                        {visible && part.value}
+                        {part.value}
                     </span>
                 );
             })}
@@ -84,7 +77,7 @@ export function SplitView({ diffResult, partToChange, activeChange }: SplitViewP
 
     return (
         <div className="flex h-full">
-            <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden w-0">
+            <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden min-w-0">
                 <div className="p-3 bg-muted/50 border-b font-medium text-center text-xs text-muted-foreground uppercase tracking-widest">Original</div>
                 <ScrollArea className="flex-1 w-full" viewportRef={leftRef}>
                     {renderPane("original")}
@@ -93,7 +86,7 @@ export function SplitView({ diffResult, partToChange, activeChange }: SplitViewP
 
             <div className="w-px bg-border shrink-0" />
 
-            <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden w-0">
+            <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden min-w-0">
                 <div className="p-3 bg-muted/50 border-b font-medium text-center text-xs text-muted-foreground uppercase tracking-widest">Modified</div>
                 <ScrollArea className="flex-1 w-full" viewportRef={rightRef}>
                     {renderPane("modified")}
