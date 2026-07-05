@@ -3,9 +3,16 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import type { DiffResult } from "@/hooks/useCompare";
 import { cn } from "@/lib/utils";
 
-export function SplitView({ diffResult }: { diffResult: DiffResult }) {
+interface SplitViewProps {
+    diffResult: DiffResult;
+    partToChange: Map<number, number>;
+    activeChange: number;
+}
+
+export function SplitView({ diffResult, partToChange, activeChange }: SplitViewProps) {
     const leftRef = useRef<HTMLDivElement>(null);
     const rightRef = useRef<HTMLDivElement>(null);
+    const suppressSync = useRef(false);
 
     useEffect(() => {
         const left = leftRef.current;
@@ -14,6 +21,7 @@ export function SplitView({ diffResult }: { diffResult: DiffResult }) {
         if (!left || !right) return;
 
         const handleScroll = (source: HTMLDivElement, target: HTMLDivElement) => {
+            if (suppressSync.current) return;
             if (source.scrollTop !== target.scrollTop) {
                 target.scrollTop = source.scrollTop;
             }
@@ -31,43 +39,64 @@ export function SplitView({ diffResult }: { diffResult: DiffResult }) {
         };
     }, []);
 
+    useEffect(() => {
+        if (activeChange < 0) return;
+
+        // Each pane renders a span for every part (empty for the other
+        // side's changes), so both can center their own copy. Pause the
+        // scroll sync so the two programmatic scrolls don't fight.
+        suppressSync.current = true;
+        for (const pane of [leftRef.current, rightRef.current]) {
+            pane
+                ?.querySelector(`[data-change="${activeChange}"]`)
+                ?.scrollIntoView({ block: "center" });
+        }
+        const id = setTimeout(() => {
+            suppressSync.current = false;
+        }, 100);
+        return () => clearTimeout(id);
+    }, [activeChange]);
+
+    const renderPane = (side: "original" | "modified") => (
+        <div className="p-6 font-mono text-sm whitespace-pre-wrap leading-relaxed">
+            {diffResult.diffs.map((part, index) => {
+                const change = partToChange.get(index);
+                const visible = side === "original" ? !part.added : !part.removed;
+                return (
+                    <span
+                        key={index}
+                        data-change={change}
+                        className={cn(
+                            side === "original" && part.removed &&
+                                "bg-red-100 text-red-800 line-through decoration-red-500 decoration-2 dark:bg-red-900/60 dark:text-red-100",
+                            side === "modified" && part.added &&
+                                "bg-green-100 text-green-800 font-bold dark:bg-green-600 dark:text-white",
+                            visible && change === activeChange && (part.added || part.removed) &&
+                                "outline-2 outline-offset-1 outline-blue-500"
+                        )}
+                    >
+                        {visible && part.value}
+                    </span>
+                );
+            })}
+        </div>
+    );
+
     return (
         <div className="flex h-full">
             <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden w-0">
-                <div className="p-3 bg-neutral-900/50 border-b border-neutral-800 font-medium text-center text-xs text-neutral-400 uppercase tracking-widest">Original</div>
+                <div className="p-3 bg-muted/50 border-b font-medium text-center text-xs text-muted-foreground uppercase tracking-widest">Original</div>
                 <ScrollArea className="flex-1 w-full" viewportRef={leftRef}>
-                    <div className="p-6 font-mono text-sm whitespace-pre-wrap leading-relaxed text-neutral-300">
-                        {diffResult.diffs.map((part, index) => (
-                            <span
-                                key={index}
-                                className={cn(
-                                    part.removed && "bg-red-900/60 text-red-100 decoration-red-500 line-through decoration-2"
-                                )}
-                            >
-                                {!part.added && part.value}
-                            </span>
-                        ))}
-                    </div>
+                    {renderPane("original")}
                 </ScrollArea>
             </div>
 
-            <div className="w-px bg-neutral-800 shrink-0" />
+            <div className="w-px bg-border shrink-0" />
 
             <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden w-0">
-                <div className="p-3 bg-neutral-900/50 border-b border-neutral-800 font-medium text-center text-xs text-neutral-400 uppercase tracking-widest">Modified</div>
+                <div className="p-3 bg-muted/50 border-b font-medium text-center text-xs text-muted-foreground uppercase tracking-widest">Modified</div>
                 <ScrollArea className="flex-1 w-full" viewportRef={rightRef}>
-                    <div className="p-6 font-mono text-sm whitespace-pre-wrap leading-relaxed text-neutral-300">
-                        {diffResult.diffs.map((part, index) => (
-                            <span
-                                key={index}
-                                className={cn(
-                                    part.added && "bg-green-600 text-white font-bold"
-                                )}
-                            >
-                                {!part.removed && part.value}
-                            </span>
-                        ))}
-                    </div>
+                    {renderPane("modified")}
                 </ScrollArea>
             </div>
         </div>

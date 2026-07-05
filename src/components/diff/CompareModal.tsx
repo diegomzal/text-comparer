@@ -4,11 +4,14 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { DiffResult, DiffType } from "@/hooks/useCompare";
-import { useState } from "react";
+import { getDiffStats } from "@/lib/diff-stats";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { useMemo, useState } from "react";
 import { SplitView } from "./SplitView";
 import { UnifiedView } from "./UnifiedView";
 
@@ -28,12 +31,33 @@ export function CompareModal({
     setDiffType,
 }: CompareModalProps) {
     const [isUnified, setIsUnified] = useState(false);
-    if (!diffResult) return null;
+    const [activeChange, setActiveChange] = useState(-1);
+
+    const stats = useMemo(
+        () => (diffResult ? getDiffStats(diffResult.diffs) : null),
+        [diffResult]
+    );
+
+    // Reset navigation when a new comparison comes in.
+    const [lastDiffResult, setLastDiffResult] = useState(diffResult);
+    if (diffResult !== lastDiffResult) {
+        setLastDiffResult(diffResult);
+        setActiveChange(-1);
+    }
+
+    if (!diffResult || !stats) return null;
+
+    const { changeCount } = stats;
+
+    const goToNext = () =>
+        setActiveChange((i) => (i + 1) % changeCount);
+    const goToPrev = () =>
+        setActiveChange((i) => (i <= 0 ? changeCount - 1 : i - 1));
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-[96vw] w-[96vw] sm:max-w-[96vw] h-[92vh] flex flex-col p-0 gap-0 bg-neutral-950 border-neutral-800 text-neutral-200 dark !max-w-[96vw]">
-                <DialogHeader className="p-4 border-b border-neutral-800 shrink-0">
+            <DialogContent className="max-w-[96vw] w-[96vw] sm:max-w-[96vw] h-[92vh] flex flex-col p-0 gap-0 !max-w-[96vw]">
+                <DialogHeader className="p-4 border-b shrink-0">
                     <DialogTitle className="sr-only">Text Comparison</DialogTitle>
                     <div className="flex items-center justify-between px-4">
                         <div className="flex items-center gap-6">
@@ -44,27 +68,65 @@ export function CompareModal({
                                     onCheckedChange={setIsUnified}
                                     className="data-[state=checked]:bg-blue-600"
                                 />
-                                <Label htmlFor="unified-mode" className="text-neutral-300 font-medium select-none cursor-pointer">Unified View</Label>
+                                <Label htmlFor="unified-mode" className="font-medium select-none cursor-pointer">Unified View</Label>
                             </div>
 
-                            <div className="h-4 w-px bg-neutral-800" />
+                            <div className="h-4 w-px bg-border" />
 
                             <Tabs value={diffType} onValueChange={(v) => setDiffType(v as DiffType)}>
-                                <TabsList className="bg-neutral-900 border border-neutral-800 h-8">
-                                    <TabsTrigger value="chars" className="text-xs data-[state=active]:bg-neutral-800 data-[state=active]:text-neutral-100 text-neutral-400 px-3 h-6">Char</TabsTrigger>
-                                    <TabsTrigger value="words" className="text-xs data-[state=active]:bg-neutral-800 data-[state=active]:text-neutral-100 text-neutral-400 px-3 h-6">Word</TabsTrigger>
-                                    <TabsTrigger value="lines" className="text-xs data-[state=active]:bg-neutral-800 data-[state=active]:text-neutral-100 text-neutral-400 px-3 h-6">Line</TabsTrigger>
+                                <TabsList className="h-8">
+                                    <TabsTrigger value="chars" className="text-xs px-3 h-6">Char</TabsTrigger>
+                                    <TabsTrigger value="words" className="text-xs px-3 h-6">Word</TabsTrigger>
+                                    <TabsTrigger value="lines" className="text-xs px-3 h-6">Line</TabsTrigger>
                                 </TabsList>
                             </Tabs>
+                        </div>
+
+                        <div className="flex items-center gap-4 mr-8">
+                            <span className="text-sm text-muted-foreground tabular-nums">
+                                <span className="text-green-600 dark:text-green-400 font-medium">+{stats.added}</span>
+                                {' '}
+                                <span className="text-red-600 dark:text-red-400 font-medium">−{stats.removed}</span>
+                            </span>
+
+                            <div className="flex items-center gap-1">
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="size-7"
+                                    onClick={goToPrev}
+                                    disabled={changeCount === 0}
+                                    aria-label="Previous difference"
+                                >
+                                    <ChevronUp />
+                                </Button>
+                                <span className="text-xs text-muted-foreground tabular-nums min-w-20 text-center select-none">
+                                    {changeCount === 0
+                                        ? "No differences"
+                                        : activeChange < 0
+                                            ? `${changeCount} difference${changeCount === 1 ? "" : "s"}`
+                                            : `${activeChange + 1} / ${changeCount}`}
+                                </span>
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="size-7"
+                                    onClick={goToNext}
+                                    disabled={changeCount === 0}
+                                    aria-label="Next difference"
+                                >
+                                    <ChevronDown />
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 </DialogHeader>
 
-                <div className="flex-1 min-h-0 bg-black/40 overflow-hidden">
+                <div className="flex-1 min-h-0 bg-muted/30 overflow-hidden">
                     {isUnified ? (
-                        <UnifiedView diffResult={diffResult} />
+                        <UnifiedView diffResult={diffResult} partToChange={stats.partToChange} activeChange={activeChange} />
                     ) : (
-                        <SplitView diffResult={diffResult} />
+                        <SplitView diffResult={diffResult} partToChange={stats.partToChange} activeChange={activeChange} />
                     )}
                 </div>
             </DialogContent>
